@@ -26,7 +26,10 @@ urlpatterns += patterns('django.views.generic.date_based',
     url(r'^photo/(?P<year>\d{4})/(?P<month>[a-z]{3})/(?P<day>\w{1,2})/$', 'archive_day', photo_args, name='pl-photo-archive-day'),
     url(r'^photo/(?P<year>\d{4})/(?P<month>[a-z]{3})/$', 'archive_month', photo_args, name='pl-photo-archive-month'),
     url(r'^photo/(?P<year>\d{4})/$', 'archive_year', photo_args, name='pl-photo-archive-year'),
-    url(r'^photo/$', 'archive_index', photo_args, name='pl-photo-archive'),
+    # url(r'^photo/$', 'archive_index', photo_args, name='pl-photo-archive'),
+)
+urlpatterns += patterns('photologue.views',
+    url(r'^photo/$', 'photo_index', name='pl-photo-archive'),
 )
 urlpatterns += patterns('django.views.generic.list_detail',
     url(r'^photo/(?P<slug>[\-\d\w]+)/$', 'object_detail', {'slug_field': 'title_slug', 'queryset': Photo.objects.filter(is_public=True)}, name='pl-photo'),
