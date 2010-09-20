@@ -24,7 +24,7 @@ def ajax_view(request):
         # sample()
         if request_type == 'sample':
             # Excluded is_public for obvious security reasons
-            ajax_request.fields['count'] = forms.IntegerField(min_value=0, max_value=100, required=False)
+            ajax_request.fields['count'] = forms.IntegerField(min_value=0, required=False)
             ajax_request.full_clean()
             if ajax_request.is_valid():
                 photo_list = []
