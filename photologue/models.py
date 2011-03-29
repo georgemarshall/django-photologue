@@ -9,6 +9,7 @@ from inspect import isclass
 from django.db import models
 from django.db.models.signals import post_init
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.urlresolvers import reverse
 from django.template.defaultfilters import slugify
@@ -152,37 +153,24 @@ class Gallery(models.Model):
         return reverse('pl-gallery', args=[self.title_slug])
 
     def latest(self, limit=LATEST_LIMIT, public=True):
-        if not limit:
-            limit = self.photo_count()
-        if public:
-            return self.public()[:limit]
-        else:
-            return self.photos.all()[:limit]
+        return self.photos.latest(limit, public)
 
     def sample(self, count=0, public=True):
-        if count == 0 or count > self.photo_count():
-            count = self.photo_count()
-        if public:
-            photo_set = self.public()
-        else:
-            photo_set = self.photos.all()
-        return random.sample(photo_set, count)
+        return self.photos.sample(count, public)
 
     def photo_count(self, public=True):
-        if public:
-            return self.public().count()
-        else:
-            return self.photos.all().count()
+        return self.photos.photo_count(public)
     photo_count.short_description = _('count')
 
     def public(self):
-        return self.photos.filter(is_public=True)
+        return self.photos.public()
 
 
 class GalleryUpload(models.Model):
     zip_file = models.FileField(_('images file (.zip)'), upload_to=PHOTOLOGUE_DIR+"/temp",
                                 help_text=_('Select a .zip file of images to upload into a new Gallery.'))
     gallery = models.ForeignKey(Gallery, null=True, blank=True, help_text=_('Select a gallery to add these images to. leave this empty to create a new gallery from the supplied title.'))
+    uploaded_by = models.ForeignKey(User, null=True, blank=True)
     title = models.CharField(_('title'), max_length=75, help_text=_('All photos in the gallery will be given a title made up of the gallery title + a sequential number.'))
     caption = models.TextField(_('caption'), blank=True, help_text=_('Caption will be added to all photos.'))
     description = models.TextField(_('description'), blank=True, help_text=_('A description of this Gallery.'))
@@ -210,11 +198,13 @@ class GalleryUpload(models.Model):
             if self.gallery:
                 gallery = self.gallery
             else:
-                gallery = Gallery.objects.create(title=self.title,
-                                                 title_slug=slugify(self.title),
-                                                 description=self.description,
-                                                 is_public=self.is_public,
-                                                 tags=self.tags)
+                gallery = Gallery.objects.create(
+                    title=self.title,
+                     title_slug=slugify(self.title),
+                     description=self.description,
+                     is_public=self.is_public,
+                     tags=self.tags
+                )
             from cStringIO import StringIO
             for filename in sorted(zip.namelist()):
                 if filename.startswith('__'): # do not process meta files
@@ -240,11 +230,14 @@ class GalleryUpload(models.Model):
                         try:
                             p = Photo.objects.get(title_slug=slug)
                         except Photo.DoesNotExist:
-                            photo = Photo(title=title,
-                                          title_slug=slug,
-                                          caption=self.caption,
-                                          is_public=self.is_public,
-                                          tags=self.tags)
+                            photo = Photo(
+                                uploaded_by=self.uploaded_by,
+                                title=title,
+                                title_slug=slug,
+                                caption=self.caption,
+                                is_public=self.is_public,
+                                tags=self.tags
+                            )
                             photo.image.save(filename, ContentFile(data))
                             gallery.photos.add(photo)
                             count = count + 1
@@ -480,6 +473,33 @@ class ImageModel(models.Model):
         self.clear_cache()
         super(ImageModel, self).delete()
 
+class PhotoManager(models.Manager):
+    def latest(self, limit=LATEST_LIMIT, public=True):
+        if public:
+            photo_set = self.public()
+        else:
+            photo_set = self.all()
+        if limit == 0:
+            return photo_set
+        return photo_set[:limit]
+
+    def photo_count(self, is_public=True):
+        if is_public:
+            return self.public().count()
+        else:
+            return self.count()
+
+    def public(self):
+        return self.filter(is_public=True)
+
+    def sample(self, count=0, public=True):
+        if public:
+            photo_set = self.public().order_by('?')
+        else:
+            photo_set = self.order_by('?')
+        if count == 0:
+            return photo_set
+        return photo_set[:count]
 
 class Photo(ImageModel):
     title = models.CharField(_('title'), max_length=100, unique=True)
@@ -487,8 +507,11 @@ class Photo(ImageModel):
                                   help_text=('A "slug" is a unique URL-friendly title for an object.'))
     caption = models.TextField(_('caption'), blank=True)
     date_added = models.DateTimeField(_('date added'), default=datetime.now, editable=False)
+    uploaded_by = models.ForeignKey(User, blank=True, null=True)
     is_public = models.BooleanField(_('is public'), default=True, help_text=_('Public photographs will be displayed in the default views.'))
     tags = TagField(help_text=tagfield_help_text, verbose_name=_('tags'))
+
+    objects = PhotoManager()
 
     class Meta:
         ordering = ['-date_added']
